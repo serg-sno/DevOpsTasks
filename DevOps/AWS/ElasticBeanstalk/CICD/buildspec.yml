@@ -1,0 +1,36 @@
+#-----------------------------------------------------------------
+# CodeBuild buildspec.yml
+# Author: Sergey Sakhno
+# ----------------------------------------------------------------
+
+version: 0.2
+
+env:
+  variables:
+    PGTEST_DBURL: jdbc:postgresql://localhost:5432/devopstasks
+    PGTEST_DBUSER: devopstasks
+    PGTEST_DBPASSWORD: pass
+
+phases:
+  install:
+    run-as: root
+    runtime-versions:
+      java: corretto17
+    commands:
+      - docker pull public.ecr.aws/docker/library/postgres:latest
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Starting postgres
+      - docker run -e POSTGRES_USER=$PGTEST_DBUSER -e POSTGRES_PASSWORD=$PGTEST_DBPASSWORD -d -p 5432:5432 public.ecr.aws/docker/library/postgres:latest
+      - echo Starting build and test
+      - mvn install -Dspring.profiles.active=prodtest
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo 'Target folder files:'
+      - ls target -l -r
+artifacts:
+  base-directory: target
+  files:
+    - DevOpsTasks-0.0.1-SNAPSHOT.jar

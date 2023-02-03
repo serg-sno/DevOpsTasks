@@ -1,0 +1,136 @@
+#-------------------------------------------------------------------------------------------------
+# Description : CloudFormation root stack template
+# Author      : Sergey Sakhno
+# ------------------------------------------------------------------------------------------------
+
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  EnvironmentParameter:
+    Type: String
+    AllowedValues:
+      - prod
+      - stage
+    Default: prod
+    Description: Environment
+  EC2InstanceTypeParameter:
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+    Description: EC2 Instance type for Web servers
+  DbInstanceTypeParameter:
+    Type: String
+    Default: db.t3.micro
+    AllowedValues:
+      - db.t3.micro
+      - db.t4g.micro
+    Description: EC2 Instance type for database server
+  CreateElasticBeanstalkApplication:
+    Type: String
+    Default: 'Yes'
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+    Description: Select "No" if you create second environment in already existing Elastic Beanstalk application
+  GitHubConnectionParameter:
+    Type: String
+    Description: Github repository connection ARN for trigger CICD pipeline
+  GitHubFullRepositoryIdParameter:
+    Type: String
+    Description: Github repository id, should be like "serg-sno/DevOpsTask"
+  GitHubBranchNameParameter:
+    Type: String
+    Default: main
+    Description: Github branch name
+  NotificationSNSTopicArnParameter:
+    Type: String
+    Default: ''
+    Description: OPTIONAL. Arn of target SNS topic for CICD pipeline notifications
+  SSLCertificateArnParameter:
+    Type: String
+    Default: ''
+    Description: OPTIONAL. SSL certificate Arn. If is not blank will use HTTPS
+
+Resources:
+  NetworkLayer:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        ApplicationNameParameter: 'DevOpsTasks'
+        EnvironmentParameter: !Ref EnvironmentParameter
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_NetworkLayer'
+        - Key: Application
+          Value: 'DevOpsTasks'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+      TemplateURL: Infrastructure/NetworkLayerCf.yml
+      TimeoutInMinutes: 5
+  Database:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - NetworkLayer
+    Properties:
+      Parameters:
+        ApplicationNameParameter: 'DevOpsTasks'
+        EnvironmentParameter: !Ref EnvironmentParameter
+        PublicSubnet1CidrBlockParameter: !GetAtt NetworkLayer.Outputs.PublicSubnet1CidrBlock
+        PublicSubnet2CidrBlockParameter: !GetAtt NetworkLayer.Outputs.PublicSubnet2CidrBlock
+        DbSubnetGroupNameParameter: !GetAtt NetworkLayer.Outputs.DbSubnetGroupName
+        DbVpcIdParameter: !GetAtt NetworkLayer.Outputs.DbVpcId
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_Database'
+        - Key: Application
+          Value: 'DevOpsTasks'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+      TemplateURL: Infrastructure/RdsCf.yml
+      TimeoutInMinutes: 10
+  ElasticBeanstalk:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - NetworkLayer
+    Properties:
+      Parameters:
+        ApplicationNameParameter: 'DevOpsTasks'
+        CreateElasticBeanstalkApplication: !Ref CreateElasticBeanstalkApplication
+        EnvironmentParameter: !Ref EnvironmentParameter
+        PublicSubnet1IdParameter: !GetAtt NetworkLayer.Outputs.PublicSubnet1Id
+        PublicSubnet2IdParameter: !GetAtt NetworkLayer.Outputs.PublicSubnet2Id
+        PublicVpcIdParameter: !GetAtt NetworkLayer.Outputs.PublicVpcId
+        EC2InstanceTypeParameter: !Ref EC2InstanceTypeParameter
+        SSLCertificateArnParameter: !Ref SSLCertificateArnParameter
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_ElasticBeanstalk'
+        - Key: Application
+          Value: 'DevOpsTasks'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+      TemplateURL: Infrastructure/ElasticBeanstalkCf.yml
+      TimeoutInMinutes: 10
+  CicdPipeline:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - ElasticBeanstalk
+      - Database
+    Properties:
+      Parameters:
+        ApplicationNameParameter: 'DevOpsTasks'
+        EnvironmentParameter: !Ref EnvironmentParameter
+        GitHubConnectionParameter: !Ref GitHubConnectionParameter
+        GitHubFullRepositoryIdParameter: !Ref GitHubFullRepositoryIdParameter
+        GitHubBranchNameParameter: !Ref GitHubBranchNameParameter
+        NotificationSNSTopicArnParameter: !Ref NotificationSNSTopicArnParameter
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_CicdPipeline'
+        - Key: Application
+          Value: 'DevOpsTasks'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+      TemplateURL: CICD/CicdCf.yml
+      TimeoutInMinutes: 5

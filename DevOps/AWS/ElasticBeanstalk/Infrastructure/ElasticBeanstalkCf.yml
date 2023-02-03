@@ -1,0 +1,219 @@
+#-------------------------------------------------------------------------------------------------
+# Description : CloudFormation nested stack template for Elastic Beanstalk
+# Author      : Sergey Sakhno
+# ------------------------------------------------------------------------------------------------
+
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  EC2InstanceTypeParameter:
+    Type: String
+    AllowedValues:
+      - t2.micro
+      - t2.small
+    Description: EC2 Instance type for Web servers
+  ApplicationNameParameter:
+    Type: String
+    Description: Application name
+  CreateElasticBeanstalkApplication:
+    Type: String
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+    Description: Select "No" if you create second environment in already existing Elastic Beanstalk application otherwise select "Yes"
+  EnvironmentParameter:
+    Type: String
+    AllowedValues:
+      - prod
+      - stage
+    Description: EnvironmentInternetGatewayAttachment
+  SSLCertificateArnParameter:
+    Type: String
+    Description: OPTIONAL. SSL certificate Arn. If is not blank will use HTTPS.
+  PublicSubnet1IdParameter:
+    Type: String
+    Description: Public subnet 1 Id
+  PublicSubnet2IdParameter:
+    Type: String
+    Description: Public subnet 2 Id
+  PublicVpcIdParameter:
+    Type: String
+    Description: Public Vpc Id
+
+Conditions:
+  UseHttpsCondition: !Not [!Equals [!Ref SSLCertificateArnParameter, '']]
+  NeedToCreateEbApplication: !Equals [!Ref CreateElasticBeanstalkApplication, 'Yes']
+
+Resources:
+  EC2InstancePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${AWS::StackName}_SSMParameterStoreRead'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'ssm:GetParameterHistory'
+              - 'ssm:GetParametersByPath'
+              - 'ssm:GetParameters'
+              - 'ssm:GetParameter'
+            Resource:
+              - !Sub 'arn:aws:ssm:*:${AWS::AccountId}:parameter/config/${ApplicationNameParameter}_${EnvironmentParameter}/*'
+
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Description: Beanstalk EC2 role
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier
+        - !Ref EC2InstancePolicy
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_EC2InstanceRole'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2InstanceRole
+
+  EbApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Condition: NeedToCreateEbApplication
+    Properties:
+      ApplicationName: !Ref 'ApplicationNameParameter'
+      Description: !Sub 'AWS Elastic Beanstalk ${ApplicationNameParameter} ${EnvironmentParameter}'
+
+  EbConfigurationTemplate:
+    Type: AWS::ElasticBeanstalk::ConfigurationTemplate
+    Properties:
+      ApplicationName: DevOpsTasks
+      Description: AWS ElasticBeanstalk DevOpsTasks Configuration Template
+      OptionSettings:
+        - Namespace: aws:ec2:vpc
+          OptionName: VpcId
+          Value: !Ref PublicVpcIdParameter
+        - Namespace: aws:ec2:vpc
+          OptionName: Subnets
+          Value: !Sub '${PublicSubnet1IdParameter},${PublicSubnet2IdParameter}'
+        - Namespace: aws:ec2:vpc
+          OptionName: ELBSubnets
+          Value: !Sub '${PublicSubnet1IdParameter},${PublicSubnet2IdParameter}'
+        - Namespace: aws:autoscaling:asg
+          OptionName: MinSize
+          Value: '2'
+        - Namespace: aws:autoscaling:asg
+          OptionName: MaxSize
+          Value: '4'
+          #Application load balancer
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: EnvironmentType
+          Value: LoadBalanced
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: LoadBalancerType
+          Value: application
+        - Namespace: aws:elbv2:loadbalancer
+          OptionName: AccessLogsS3Enabled
+          Value: False
+          #Set HTTPS
+        - !If
+          - UseHttpsCondition
+          -
+            Namespace: aws:elbv2:listener:443
+            OptionName: Protocol
+            Value: HTTPS
+          - !Ref AWS::NoValue
+        - !If
+          - UseHttpsCondition
+          -
+            Namespace: aws:elbv2:listener:443
+            OptionName: SSLCertificateArns
+            Value: !Ref SSLCertificateArnParameter
+          - !Ref AWS::NoValue
+        - !If
+          - UseHttpsCondition
+          -
+            Namespace: aws:elbv2:listener:80
+            OptionName: ListenerEnabled
+            Value: False
+          - !Ref AWS::NoValue
+          #Default process
+        - Namespace: aws:elasticbeanstalk:environment:process:default
+          OptionName: DeregistrationDelay
+          Value: '20'
+        - Namespace: aws:elasticbeanstalk:environment:process:default
+          OptionName: HealthCheckInterval
+          Value: '15'
+        - Namespace: aws:elasticbeanstalk:environment:process:default
+          OptionName: HealthCheckPath
+          Value: '/'
+        - Namespace: aws:elasticbeanstalk:environment:process:default
+          OptionName: HealthCheckTimeout
+          Value: '5'
+        - Namespace: aws:elasticbeanstalk:environment:process:default
+          OptionName: HealthyThresholdCount
+          Value: '3'
+        - Namespace: aws:elasticbeanstalk:environment:process:default
+          OptionName: UnhealthyThresholdCount
+          Value: '5'
+        - Namespace: aws:elasticbeanstalk:environment:process:default
+          OptionName: Port
+          Value: '80'
+        - Namespace: aws:elasticbeanstalk:environment:process:default
+          OptionName: Protocol
+          Value: HTTP
+          #Launch configuration
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: !Ref EC2InstanceProfile
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: InstanceType
+          Value: !Ref EC2InstanceTypeParameter
+          #Deployment options
+        - Namespace: aws:elasticbeanstalk:command
+          OptionName: DeploymentPolicy
+          Value: Rolling
+        - Namespace: aws:elasticbeanstalk:command
+          OptionName: BatchSizeType
+          Value: Percentage
+        - Namespace: aws:elasticbeanstalk:command
+          OptionName: BatchSize
+          Value: 50
+          #Port
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: PORT
+          Value: '5000'
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: SPRING_PROFILES_ACTIVE
+          Value: !Ref 'EnvironmentParameter'
+      SolutionStackName: '64bit Amazon Linux 2 v3.4.3 running Corretto 17'
+
+  EbEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName: DevOpsTasks
+      Description: AWS ElasticBeanstalk DevOpsTasks Environment
+      EnvironmentName: !Sub '${ApplicationNameParameter}-${EnvironmentParameter}'
+      TemplateName: !Ref EbConfigurationTemplate
+#      VersionLabel: !Ref EbApplicationVersion
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'

@@ -1,0 +1,290 @@
+#-------------------------------------------------------------------------------------------------
+# Description : CloudFormation nested stack template for CodePipeline
+# Author      : Sergey Sakhno
+# ------------------------------------------------------------------------------------------------
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  ApplicationNameParameter:
+    Type: String
+    Description: Application name
+  EnvironmentParameter:
+    Type: String
+    AllowedValues:
+      - prod
+      - stage
+    Description: EnvironmentInternetGatewayAttachment
+  GitHubConnectionParameter:
+    Type: String
+    Description: Github repository connection ARN
+  GitHubFullRepositoryIdParameter:
+    Type: String
+    Description: Github repository id, should be like "serg-sno/DevOpsTask"
+  GitHubBranchNameParameter:
+    Type: String
+    Description: Github branch name
+  NotificationSNSTopicArnParameter:
+    Type: String
+    Description: OPTIONAL. Arn of target SNS topic for CICD pipeline notifications
+
+Conditions:
+  EnablePipelineNotificationCondition: !Not
+    - !Equals
+      - !Ref NotificationSNSTopicArnParameter
+      - ''
+
+Resources:
+  CodePipelineArtifactStoreBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_ArtifactStore'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  CodePipelineServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${ApplicationNameParameter}_${EnvironmentParameter}_CodePipelineServiceRole'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Sub '${ApplicationNameParameter}_${EnvironmentParameter}_CodePipelineServicePolicy'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  'iam:PassRole'
+                Resource: '*'
+                Condition:
+                  StringEqualsIfExists:
+                    iam:PassedToService:
+                      - 'cloudformation.amazonaws.com'
+                      - 'elasticbeanstalk.amazonaws.com'
+                      - 'ec2.amazonaws.com'
+              - Effect: Allow
+                Action:
+                  - 'elasticbeanstalk:*'
+                  - 'ec2:*'
+                  - 'elasticloadbalancing:*'
+                  - 'autoscaling:*'
+                  - 'cloudwatch:*'
+                  - 's3:*'
+                  - 'sns:*'
+                  - 'cloudformation:*'
+                  - 'rds:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'cloudformation:DeleteStack'
+                  - 'cloudformation:CreateStack'
+                  - 'cloudformation:DescribeStacks'
+                  - 'cloudformation:UpdateStack'
+                  - 'cloudformation:CreateChangeSet'
+                  - 'cloudformation:DeleteChangeSet'
+                  - 'cloudformation:DescribeChangeSet'
+                  - 'cloudformation:ExecuteChangeSet'
+                  - 'cloudformation:SetStackPolicy'
+                  - 'cloudformation:ValidateTemplate'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'codestar-connections:UseConnection'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'codebuild:BatchGetBuilds'
+                  - 'codebuild:StartBuild'
+                  - 'codebuild:BatchGetBuildBatches'
+                  - 'codebuild:StartBuildBatch'
+                Resource: "*"
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_CodePipelineServiceRole'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  CodeBuildServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${ApplicationNameParameter}_${EnvironmentParameter}_CodeBuildServiceRole'
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Sub '${ApplicationNameParameter}_${EnvironmentParameter}_CodeBuildServicePolicy'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*'
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:GetObject'
+                  - 's3:GetObjectVersion'
+                  - 's3:GetBucketAcl'
+                  - 's3:GetBucketLocation'
+                Resource: !Sub '${CodePipelineArtifactStoreBucket.Arn}/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_CodeBuildServiceRole'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  AppCodeBuild:
+    Type: 'AWS::CodeBuild::Project'
+    DependsOn:
+      - CodeBuildServiceRole
+    Properties:
+      Name: !Sub '${ApplicationNameParameter}_${EnvironmentParameter}'
+      Source:
+        Type: 'CODEPIPELINE'
+        BuildSpec: 'DevOps/AWS/ElasticBeanstalk/CICD/buildspec.yml'
+      Artifacts:
+        Type: 'CODEPIPELINE'
+        Packaging: 'NONE'
+        EncryptionDisabled: false
+      Cache:
+        Type: 'NO_CACHE'
+      Environment:
+        ComputeType: 'BUILD_GENERAL1_SMALL'
+        EnvironmentVariables: []
+        Image: 'aws/codebuild/amazonlinux2-x86_64-standard:4.0'
+        ImagePullCredentialsType: 'CODEBUILD'
+        PrivilegedMode: true
+        Type: 'LINUX_CONTAINER'
+      BadgeEnabled: false
+      ConcurrentBuildLimit: 1
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+        S3Logs:
+          EncryptionDisabled: false
+          Status: DISABLED
+      Visibility: PRIVATE
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      QueuedTimeoutInMinutes: 5
+      TimeoutInMinutes: 5
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  AppPipeline:
+    Type: 'AWS::CodePipeline::Pipeline'
+    DependsOn:
+      - CodePipelineArtifactStoreBucket
+      - AppCodeBuild
+      - CodePipelineServiceRole
+    Properties:
+      Name: !Sub '${ApplicationNameParameter}_${EnvironmentParameter}'
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      RestartExecutionOnUpdate: False
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              RunOrder: 1
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: 'CodeStarSourceConnection'
+                Version: '1'
+              Configuration:
+                BranchName: !Ref GitHubBranchNameParameter
+                DetectChanges: True
+                ConnectionArn: !Ref GitHubConnectionParameter
+                FullRepositoryId: !Ref GitHubFullRepositoryIdParameter
+                OutputArtifactFormat: "CODE_ZIP"
+              OutputArtifacts:
+                - Name: 'SourceArtifact'
+        - Name: Build
+          Actions:
+            - Name: Build
+              RunOrder: 1
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: 'CodeBuild'
+                Version: '1'
+              Configuration:
+                ProjectName: !Sub '${ApplicationNameParameter}_${EnvironmentParameter}'
+              InputArtifacts:
+                - Name: 'SourceArtifact'
+              OutputArtifacts:
+                - Name: 'BuildArtifact'
+        - Name: Approval
+          Actions:
+            - ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              Name: ManualApproval
+              RunOrder: 1
+        - Name: Deploy
+          Actions:
+            - Name: Deploy
+              RunOrder: 1
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: 'ElasticBeanstalk'
+                Version: 1
+              Configuration:
+                ApplicationName: !Ref ApplicationNameParameter
+                EnvironmentName: !Sub '${ApplicationNameParameter}-${EnvironmentParameter}'
+              InputArtifacts:
+                - Name: 'BuildArtifact'
+      ArtifactStore:
+        Type: S3
+        Location: !Ref CodePipelineArtifactStoreBucket
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+  CodePipelineNotification:
+    Type: AWS::CodeStarNotifications::NotificationRule
+    Condition: EnablePipelineNotificationCondition
+    DependsOn:
+      - AppPipeline
+    Properties:
+      DetailType: BASIC
+      EventTypeIds:
+        - codepipeline-pipeline-action-execution-failed
+        - codepipeline-pipeline-manual-approval-needed
+      Name: !Sub '${EnvironmentParameter}PipelineNotification'
+      Resource: !Sub 'arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${AppPipeline}'
+      Targets:
+        - TargetType: SNS
+          TargetAddress: !Ref NotificationSNSTopicArnParameter

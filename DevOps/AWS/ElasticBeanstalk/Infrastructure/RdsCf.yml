@@ -1,0 +1,83 @@
+#-------------------------------------------------------------------------------------------------
+# Description : CloudFormation nested stack template for RDS Postgres database
+# Author      : Sergey Sakhno
+# ------------------------------------------------------------------------------------------------
+
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  ApplicationNameParameter:
+    Type: String
+    Description: Application name
+  EnvironmentParameter:
+    Type: String
+    AllowedValues:
+      - prod
+      - stage
+    Description: EnvironmentInternetGatewayAttachment
+  DbVpcIdParameter:
+    Type: String
+    Description: Database VPC Id
+  PublicSubnet1CidrBlockParameter:
+    Type: String
+    Description: Public Subnet 1 CidrBlock
+  PublicSubnet2CidrBlockParameter:
+    Type: String
+    Description: Public Subnet 2 CidrBlock
+  DbSubnetGroupNameParameter:
+    Type: String
+    Description: Database subnet group id
+
+Resources:
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref DbVpcIdParameter
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !Ref PublicSubnet1CidrBlockParameter
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !Ref PublicSubnet2CidrBlockParameter
+      GroupDescription: EC2 Instance access
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_Db'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  PostgresDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub 'db-${ApplicationNameParameter}-${EnvironmentParameter}'
+      VPCSecurityGroups:
+        - !GetAtt DBSecurityGroup.GroupId
+      AllocatedStorage: '5'
+      DBSubnetGroupName: !Ref DbSubnetGroupNameParameter
+      DBInstanceClass: db.t3.micro
+      Engine: Postgres
+      MasterUsername: !Sub '{{resolve:ssm:/config/${ApplicationNameParameter}_${EnvironmentParameter}/db.username}}'
+      MasterUserPassword: !Sub '{{resolve:ssm-secure:/config/${ApplicationNameParameter}_${EnvironmentParameter}/db.password}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_Db'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+    DeletionPolicy: Retain
+
+  DbEndpoint:
+    Type: AWS::SSM::Parameter
+    Properties:
+      DataType: text
+      Description: Database endpoint value
+      Name: !Sub '/config/${ApplicationNameParameter}_${EnvironmentParameter}/db.url'
+      Type: String
+      Value: !Sub 'jdbc:postgresql://${PostgresDB.Endpoint.Address}:5432/postgres'
+

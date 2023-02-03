@@ -1,0 +1,253 @@
+#-------------------------------------------------------------------------------------------------
+# Description : CloudFormation nested stack template for Network layer
+# Author      : Sergey Sakhno
+# ------------------------------------------------------------------------------------------------
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  ApplicationNameParameter:
+    Type: String
+    Description: Application name
+  EnvironmentParameter:
+    Type: String
+    AllowedValues:
+      - prod
+      - stage
+    Description: EnvironmentInternetGatewayAttachment
+
+Resources:
+  #Public VPC for EC2 Instances
+  PublicVpc:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: 10.0.0.0/23
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_Public'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref PublicVpc
+      AvailabilityZone:
+        !Select [0, !GetAZs '']
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_Public1'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone:
+        !Select [1, !GetAZs '']
+      VpcId: !Ref PublicVpc
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_Public2'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  InternetGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref PublicVpc
+      InternetGatewayId: !Ref InternetGateway
+
+  #Database VPC for RDS
+  DbVpc:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: 10.0.2.0/23
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_Db'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  DbSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref DbVpc
+      AvailabilityZone:
+        !Select [0, !GetAZs '']
+      CidrBlock: 10.0.2.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_Db1'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  DbSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone:
+        !Select [1, !GetAZs '']
+      VpcId: !Ref DbVpc
+      CidrBlock: 10.0.3.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_Db2'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  DbSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription: Database subnets group
+      SubnetIds:
+        - !Ref DbSubnet1
+        - !Ref DbSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_Db'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  #VPC Peering between Public and Db VPCs
+  PublicToDbPeering:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      VpcId: !Ref PublicVpc
+      PeerVpcId: !Ref DbVpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_PublicToDb'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  #Puclic VPC Route table
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PublicVpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_Public'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+
+  RouteToDb:
+    Type: 'AWS::EC2::Route'
+    DependsOn: PublicToDbPeering
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 10.0.2.0/23
+      VpcPeeringConnectionId: !Ref PublicToDbPeering
+
+  RouteToInternet:
+    Type: 'AWS::EC2::Route'
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  #Db VPC Route table
+  DbRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref DbVpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}_Db'
+        - Key: Application
+          Value: !Ref 'ApplicationNameParameter'
+        - Key: Environment
+          Value: !Ref 'EnvironmentParameter'
+  RouteToPublic:
+    Type: 'AWS::EC2::Route'
+    DependsOn: PublicToDbPeering
+    Properties:
+      RouteTableId: !Ref DbRouteTable
+      DestinationCidrBlock: 10.0.0.0/23
+      VpcPeeringConnectionId: !Ref PublicToDbPeering
+
+  DbSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref DbSubnet1
+      RouteTableId: !Ref DbRouteTable
+
+  DbSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref DbSubnet2
+      RouteTableId: !Ref DbRouteTable
+
+Outputs:
+  PublicVpcId:
+    Description: Public VPC Id
+    Value: !Ref PublicVpc
+
+  PublicSubnet1Id:
+    Description: Public Subnet 1 Id
+    Value: !Ref PublicSubnet1
+
+  PublicSubnet1CidrBlock:
+    Description: Public Subnet 1 CidrBlock
+    Value: !GetAtt PublicSubnet1.CidrBlock
+
+  PublicSubnet2Id:
+    Description: Public Subnet 2 Id
+    Value: !Ref PublicSubnet2
+
+  PublicSubnet2CidrBlock:
+    Description: Public Subnet 2 CidrBlock
+    Value: !GetAtt PublicSubnet2.CidrBlock
+
+  DbVpcId:
+    Description: VPC Id
+    Value: !Ref DbVpc
+
+  DbSubnetGroupName:
+    Description: Db Subnet group Id
+    Value: !Ref DbSubnetGroup
