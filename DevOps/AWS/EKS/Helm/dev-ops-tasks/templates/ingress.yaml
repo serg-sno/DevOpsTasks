@@ -1,0 +1,25 @@
+#-------------------------------------------------------------------------------------------------
+# Description : Helm chart deployment template
+# Author      : Sergey Sakhno
+#-------------------------------------------------------------------------------------------------
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.resourceName }}
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.resourceName }}
+                port:
+                  number: 80

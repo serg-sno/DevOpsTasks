@@ -1,0 +1,23 @@
+#-------------------------------------------------------------------------------------------------
+# Description : AWS Codebuild-deploy spec file
+# Author      : Sergey Sakhno
+#-------------------------------------------------------------------------------------------------
+
+version: 0.2
+phases:
+  install: # Helm3
+    commands:
+      - curl -sSL https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+  pre_build: # Check helm version and Add kubeconfig to access to EKS cluster and check readiness of the cluster
+    commands:
+      - "helm version"
+      - "mkdir ~/.kube/"
+      - "aws eks --region $AWS_DEFAULT_REGION update-kubeconfig --name $EKS_CLUSTER_NAME --role-arn $KUBE_CODEBUILD_ROLE_ARN"
+      - "chmod 0600 ~/.kube/config"
+      - "aws sts get-caller-identity"
+  build: # Deploy app via Helm
+    commands:
+      - "helm upgrade -i $RESOURCE_NAME DevOps/AWS/EKS/Helm/dev-ops-tasks --set applicationName=$APP_NAME --set environment=$ENV --set namespace=$NAMESPACE --set resourceName=$RESOURCE_NAME --set image.repository=$IMAGE_REPO_NAME --set image.tag=$CODEBUILD_RESOLVED_SOURCE_VERSION"
+  post_build: # Display the endpoint of the application
+    commands:
+      - bash -c "if [ /"$CODEBUILD_BUILD_SUCCEEDING/" == /"0/" ]; then exit 1; fi"

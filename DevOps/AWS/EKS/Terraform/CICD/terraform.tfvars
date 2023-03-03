@@ -1,0 +1,7 @@
+aws_region             = "eu-central-1"
+application_name       = "DevOpsTasks"
+environment            = "prod"
+eks_cluster_name       = "eks-cluster"
+#git_hub_repository_id  = "serg-sno/DevOpsTasks_Private" #this value should be like "serg-sno/DevOpsTasks"
+git_hub_branch_name    = "main"
+#git_hub_connection_arn = ""

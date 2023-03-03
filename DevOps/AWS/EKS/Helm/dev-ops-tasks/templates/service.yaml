@@ -1,0 +1,19 @@
+#-------------------------------------------------------------------------------------------------
+# Description : Helm chart deployment template
+# Author      : Sergey Sakhno
+#-------------------------------------------------------------------------------------------------
+
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.resourceName }}
+spec:
+  ports:
+    - port: 80
+      targetPort: 5000
+      protocol: TCP
+  type: NodePort
+  selector:
+    application: {{ .Values.applicationName }}
+    environment: {{ .Values.environment }}

@@ -1,0 +1,18 @@
+#-------------------------------------------------------------------------------------------------
+# Description : Helm chart for CD deployment
+# Author      : Sergey Sakhno
+#-------------------------------------------------------------------------------------------------
+# Default values for dev-ops-tasks.
+
+namespace: "devopstasks-prod"
+applicationName: "DevOpsTasks"
+environment: "prod"
+resourceName: "devopstasks-prod"
+replicaCount: 2
+
+image:
+  repository: ""
+  pullPolicy: Always
+  tag: "latest"
+
+

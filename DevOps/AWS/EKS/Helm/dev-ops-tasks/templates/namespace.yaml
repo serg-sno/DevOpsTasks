@@ -1,0 +1,9 @@
+#-------------------------------------------------------------------------------------------------
+# Description : Helm chart deployment template
+# Author      : Sergey Sakhno
+#-------------------------------------------------------------------------------------------------
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace }}

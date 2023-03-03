@@ -1,0 +1,33 @@
+#-------------------------------------------------------------------------------------------------
+# Description : Helm chart deployment template
+# Author      : Sergey Sakhno
+#-------------------------------------------------------------------------------------------------
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.resourceName }}
+spec:
+  selector:
+    matchLabels:
+      application: {{ .Values.applicationName }}
+      environment: {{ .Values.environment }}
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata:
+      labels:
+        application: {{ .Values.applicationName }}
+        environment: {{ .Values.environment }}
+    spec:
+      nodeSelector:
+        subnet.type: private
+      containers:
+        - image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          name: {{ .Values.resourceName }}
+          ports:
+            - containerPort: 5000
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: {{ .Values.environment }}

@@ -1,0 +1,14 @@
+#-------------------------------------------------------------------------------------------------
+# Description : Helm chart for CD deployment
+# Author      : Sergey Sakhno
+#-------------------------------------------------------------------------------------------------
+
+apiVersion: v2
+name: dev-ops-tasks
+description: A Helm chart for Kubernetes
+
+type: application
+
+version: 0.1.0
+
+appVersion: "1.16.0"
