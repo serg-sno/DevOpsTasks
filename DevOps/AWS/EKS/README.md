@@ -7,7 +7,7 @@ This is an example of a simple Java Spring Boot application with Terraform IaaC 
 
 ## The description of Infrastructure and used AWS services
 The following diagram illustrates the solution architecture and used AWS services:
-![image](https://user-images.githubusercontent.com/105599883/222498343-6f213be9-0de5-41be-b807-3767f0e2d984.png)
+![image](https://user-images.githubusercontent.com/105599883/226881469-5fa6f0b0-c4d8-4ae4-86ff-e0cacb75c852.png)
 \* Single DB instance deployment option is used to fit Free Tier requirements, but you can easily change the template for your needs.
 
 ### Infrastructure includes
