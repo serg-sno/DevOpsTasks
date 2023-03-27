@@ -116,3 +116,4 @@ Session.vim
 
 .docs/
 .terraform.lock.hcl
+*.jar

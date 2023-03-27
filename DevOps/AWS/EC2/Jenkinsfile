@@ -1,0 +1,57 @@
+pipeline {
+    agent any
+    tools {
+        maven 'Maven_3.9.0'
+    }
+    environment {
+        PGTEST_DBURL='jdbc:postgresql://localhost:5432/devopstasks'
+        PGTEST_DBUSER='devopstasks'
+        PGTEST_DBPASSWORD='pass'
+    }
+    stages {
+        stage('Build'){
+            steps {
+                sh "echo '*************** Build **********************'"
+                sh 'mvn clean package -Dmaven.test.skip=true'
+            }
+        }
+        stage('Test'){
+            steps {
+                sh "echo '*************** Test **********************'"
+                script {
+                    docker.image('public.ecr.aws/docker/library/postgres:alpine3.17')
+                        .withRun('-e POSTGRES_USER=$PGTEST_DBUSER -e POSTGRES_PASSWORD=$PGTEST_DBPASSWORD -d -p 5432:5432') { c ->
+                            sh '''
+                                #Waiting for database to start
+                                max_count=30
+                                until psql postgresql://$PGTEST_DBUSER:$PGTEST_DBPASSWORD@127.0.0.1:5432 -c "\\l"; do
+                                    if [$max_count -eq 0]
+                                    then
+                                        echo "Error: can't start postgres docker container"
+                                        exit 1
+                                    fi
+                                    echo "Postgres is unavailable - sleeping"
+                                    sleep 1
+                                    max_count=$(expr $max_count - 1)
+                                done
+                                echo "Postgres is up"
+                                #Running tests
+                                mvn test -Dspring.profiles.active=prodtest
+                            '''
+                        }
+                }
+            }
+        }
+        stage('Deploy'){
+            steps {
+                sh "echo '*************** Deploy **********************'"
+                //Copy jar to ansible files directory
+                sh "mkdir -p DevOps/AWS/EC2/Ansible/roles/deploy/files"
+                sh 'cp target/DevOpsTasks-0.0.1-SNAPSHOT.jar DevOps/AWS/EC2/Ansible/roles/deploy/files/'
+                script {
+                    ansiblePlaybook limit: "Environment_${params.DEVOPSTASKS_ENVIRONMENT}", become: true, credentialsId: "devopstasks-${params.DEVOPSTASKS_ENVIRONMENT}-key", disableHostKeyChecking: true, inventory: 'DevOps/AWS/EC2/Ansible/ansible_inventory.aws.aws_ec2.yml', playbook: 'DevOps/AWS/EC2/Ansible/deploy.yml', extras: "--extra-vars=DEVOPSTASKS_ENVIRONMENT=${params.DEVOPSTASKS_ENVIRONMENT}"
+                }
+            }
+        }
+    }
+}

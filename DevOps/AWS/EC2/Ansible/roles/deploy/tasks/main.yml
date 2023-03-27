@@ -1,0 +1,30 @@
+---
+- name: create devopstasks group
+  group:
+    name: devopstasks
+    state: present
+
+- name: create devopstasks user
+  user:
+    name: devopstasks
+    group: devopstasks
+    shell: /sbin/nologin
+    state: present
+    create_home: yes
+
+- name: Copy systemd service file to server
+  template:
+    src: devopstasks.service.j2
+    dest: /etc/systemd/system/devopstasks.service
+    owner: root
+    group: root
+
+- name: Copy jar to server
+  copy:
+    src: DevOpsTasks-0.0.1-SNAPSHOT.jar
+    dest: /home/devopstasks/bin/
+    mode: 0755
+    owner: devopstasks
+    group: devopstasks
+  notify:
+    - Restart devopstasks service

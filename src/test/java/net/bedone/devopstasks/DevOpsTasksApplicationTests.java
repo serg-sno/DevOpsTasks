@@ -1,5 +1,6 @@
 package net.bedone.devopstasks;
 
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;

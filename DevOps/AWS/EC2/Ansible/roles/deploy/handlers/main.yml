@@ -1,0 +1,7 @@
+---
+- name: Restart devopstasks service
+  systemd:
+    name: devopstasks
+    state: restarted
+    enabled: yes
+

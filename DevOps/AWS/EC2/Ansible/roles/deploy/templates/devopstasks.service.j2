@@ -1,0 +1,11 @@
+[Unit]
+Description=DevOpsTasks application
+After=syslog.target
+
+[Service]
+User=devopstasks
+ExecStart=java -jar -Dspring.profiles.active={{ DEVOPSTASKS_ENVIRONMENT }} /home/devopstasks/bin/DevOpsTasks-0.0.1-SNAPSHOT.jar
+SuccessExitStatus=143 
+
+[Install] 
+WantedBy=multi-user.target
